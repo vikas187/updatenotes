@@ -16,14 +16,16 @@ function main(type) {
     NSOA.meta.log('debug', "Triggering the reciept script on reciept record" + rec.id);
 
     try {
+
+        //updating current ticket's note
         var recId = rec.id;
         var envelopeId = rec.envelopeid;
         var userId = rec.userid;
-        var category = rec.categoryid;
         var categoryName = rec.description; 
         var startDate = ''; //rec.expense_workshop_start__c;
         var endDate = '';   //rec.expense_workshop_end__c; 
         var taskId = rec.project_taskid; //project_taskid
+        var notes = '';
 
         var userName='' ;
         var user = new NSOA.record.oaUser();
@@ -85,27 +87,62 @@ function main(type) {
             } else {
                 noteEndDate = "";
             }
-            NSOA.meta.log("error",' StartDate:'+startDate+' EndDate:'+endDate);
+            NSOA.meta.log("debug",' StartDate:'+startDate+' EndDate:'+endDate);
         }
 
         var update = new NSOA.record.oaTicket();
-        var envelope = new NSOA.record.oaEnvelope();
         update.id = recId;
         update.expense_workshop_start__c = startDate;
         update.expense_workshop_end__c = endDate;
-        update.notes = categoryName.length ? (categoryName +": ") : "" + userName + "  Start Date: "+noteStartDate+"  End Date: "+noteEndDate;
-        envelope.id = envelopeId;
-        envelope.notes = update.notes;
+        update.notes = (categoryName.length ? (categoryName +": ") : "") + userName + "  Start Date: "+noteStartDate+"  End Date: "+noteEndDate;
         var finalResults = NSOA.wsapi.modify(attributes, [update]);
-        var envelopeResults = NSOA.wsapi.modify(attributes, [envelope]);
 
         if(finalResults[0].status=="U") {
-                NSOA.meta.log("info","Update Successful");
+                NSOA.meta.log("info","Update Successful of ticket");
         }
         else {
             NSOA.meta.log("error","Update Err: "+finalResults[0].errors[0].code);
         }
+
+        //getting notes from all tickets
+        var ticketObj = new NSOA.record.oaTicket();
+        ticketObj.envelopeid = envelopeId;
+        var ticketRequest = {
+            type : "Ticket",
+                method : "equal to", 
+                fields : "notes", // specify fields to be returned
+                attributes : [ 
+                    {
+                        name : "limit",
+                        value : "1000"
+                    }
+                ],
+            objects : [ 
+                ticketObj
+            ]
+        };
+        var ticketResults = NSOA.wsapi.read(ticketRequest);
+        if (!ticketResults || !ticketResults[0] ) {
+            NSOA.form.error('debug', "Internal error analyzing tickets.");
+        }
+        else if (ticketResults[0].errors !== null || ticketResults[0].objects === null || ticketResults[0].objects.length === 0) {
+            NSOA.form.error('debug', "No data found for tickets of envelope");
+        } else { 
+            NSOA.meta.log('debug', 'results of Ticket readREquest is: '+ JSON.stringify(ticketResults));
+            ticketResults[0].objects.forEach(function(ticket){
+                if(ticket.notes.length>0) {
+                    notes += ticket.notes + '\n';
+                }
+            });
+
+        }
     
+
+        //updating notes in the end in envelope
+        var envelope = new NSOA.record.oaEnvelope();
+        envelope.id = envelopeId;
+        envelope.notes = notes;
+        envelopeResults = NSOA.wsapi.modify(attributes, [envelope]);
         if(envelopeResults[0].status=="U") {
                 NSOA.meta.log("info","Envelope Update Successful");
         }
